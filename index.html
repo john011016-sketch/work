@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>이마트 매출 분석 대시보드 (E-MART Sales Analytics)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        emart: {
+                            yellow: '#FFC800',
+                            yellowHover: '#E6B400',
+                            yellowLight: '#FFF9E6',
+                            dark: '#1E242B',
+                            darkLight: '#2D353F',
+                            accent: '#FF6B00'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- PapaParse CSV Reader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- html2pdf.js CDN for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- Google Fonts Noto Sans KR -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f4f5f7;
+        }
+        /* Custom Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* PDF Export & Print Optimizations */
+        @media print {
+            header, #dropZone, #toastNotification, .no-print, #paginationControls, #clearProductSearchBtn, #dismissDropzone {
+                display: none !important;
+            }
+            #pdfReportHeader {
+                display: block !important;
+            }
+            body {
+                background-color: #ffffff !important;
+                color: #000000 !important;
+                font-size: 10pt;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            .page-break-avoid {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+            main {
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+        }
+        .page-break-avoid {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+        }
+        .pdf-exporting {
+            background-color: #ffffff !important;
+            width: 1100px !important;
+            max-width: 1100px !important;
+            margin: 0 auto !important;
+            padding: 24px !important;
+        }
+        .pdf-exporting .no-pdf {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Header Section -->
+    <header class="bg-emart-dark text-white shadow-md sticky top-0 z-50 border-b-4 border-emart-yellow">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap justify-between items-center gap-4">
+            <!-- Logo & Title -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-emart-yellow rounded-xl flex items-center justify-center font-black text-slate-900 text-xl tracking-tighter shadow-sm">
+                    e
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-xl font-extrabold tracking-tight text-white">e-mart <span class="font-normal text-emart-yellow">매출 분석 대시보드</span></h1>
+                        <span class="text-[10px] bg-emart-yellow text-slate-900 font-bold px-2 py-0.5 rounded-full uppercase">Analytics</span>
+                    </div>
+                    <p class="text-xs text-slate-400">전국 점포별 · 카테고리별 실시간 매출 및 실적 데이터</p>
+                </div>
+            </div>
+
+            <!-- Global Action Controls -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <label for="csvFileInput" class="cursor-pointer bg-emart-yellow hover:bg-emart-yellowHover text-slate-950 text-xs sm:text-sm font-bold px-4 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2">
+                    <i class="fa-solid fa-file-csv text-slate-900 text-base"></i>
+                    <span>CSV 파일 업로드</span>
+                </label>
+                <input type="file" id="csvFileInput" accept=".csv" class="hidden" />
+
+                <button id="loadSampleBtn" class="bg-emart-darkLight hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-medium px-3.5 py-2.5 rounded-xl transition border border-slate-600 flex items-center gap-2">
+                    <i class="fa-solid fa-rotate text-emart-yellow"></i>
+                    <span>샘플 데이터 로드</span>
+                </button>
+
+                <button id="resetFiltersBtn" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs sm:text-sm font-medium px-3.5 py-2.5 rounded-xl transition border border-slate-700 flex items-center gap-1.5" title="필터 초기화">
+                    <i class="fa-solid fa-arrows-rotate"></i>
+                    <span class="hidden sm:inline">필터 초기화</span>
+                </button>
+
+                <button id="exportPdfBtn" class="bg-rose-600 hover:bg-rose-700 text-white text-xs sm:text-sm font-bold px-3.5 py-2.5 rounded-xl shadow-sm transition flex items-center gap-2" title="분석 결과 PDF 리포트 다운로드">
+                    <i class="fa-solid fa-file-pdf text-white text-base"></i>
+                    <span>PDF 리포트 저장</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Application Area -->
+    <main id="mainContent" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-1 w-full space-y-6">
+
+        <!-- Notification Toast (replaces alert) -->
+        <div id="toastNotification" class="hidden fixed bottom-5 right-5 bg-slate-900 text-white border-l-4 border-emart-yellow px-4 py-3 rounded-xl shadow-xl z-50 flex items-center gap-3 transition-all duration-300 no-print no-pdf">
+            <i class="fa-solid fa-circle-info text-emart-yellow text-lg"></i>
+            <span id="toastMessage" class="text-xs sm:text-sm font-medium">안내 메시지</span>
+        </div>
+
+        <!-- PDF Report Header (Visible only during PDF export / print) -->
+        <div id="pdfReportHeader" class="hidden p-6 mb-6 bg-slate-900 text-white rounded-2xl border-b-4 border-emart-yellow shadow-md page-break-avoid">
+            <div class="flex justify-between items-center pb-4 border-b border-slate-700">
+                <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 bg-emart-yellow rounded-xl flex items-center justify-center font-black text-slate-900 text-2xl tracking-tighter shadow-sm">
+                        e
+                    </div>
+                    <div>
+                        <h1 class="text-xl font-extrabold text-white">e-mart <span class="text-emart-yellow">매출 분석 종합 리포트</span></h1>
+                        <p class="text-xs text-slate-400">전국 점포별 · 카테고리별 실시간 매출 및 경영 실적 분석 보고서</p>
+                    </div>
+                </div>
+                <div class="text-right text-xs text-slate-300">
+                    <p class="font-bold text-slate-200">보고서 생성 일시</p>
+                    <p id="pdfReportTimestamp" class="text-emart-yellow font-mono mt-0.5 font-semibold text-sm">-</p>
+                </div>
+            </div>
+            <div class="mt-4 pt-1 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <span class="text-slate-400 block text-[10px] font-medium">조회 기간</span>
+                    <span id="pdfFilterDate" class="font-bold text-white mt-0.5 block">-</span>
+                </div>
+                <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <span class="text-slate-400 block text-[10px] font-medium">선택 점포</span>
+                    <span id="pdfFilterStore" class="font-bold text-white mt-0.5 block">-</span>
+                </div>
+                <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <span class="text-slate-400 block text-[10px] font-medium">선택 카테고리</span>
+                    <span id="pdfFilterCategory" class="font-bold text-white mt-0.5 block">-</span>
+                </div>
+                <div class="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
+                    <span class="text-slate-400 block text-[10px] font-medium">행사 여부 / 검색어</span>
+                    <span id="pdfFilterEtc" class="font-bold text-white mt-0.5 block">-</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Upload Modal Dropzone Banner -->
+        <div id="dropZone" class="bg-white border-2 border-dashed border-amber-300 hover:border-emart-yellow rounded-2xl p-5 text-center cursor-pointer transition shadow-sm relative group bg-gradient-to-r from-emart-yellowLight/50 via-white to-amber-50/30 no-print no-pdf">
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <div class="w-12 h-12 bg-emart-yellow rounded-2xl flex items-center justify-center text-slate-900 group-hover:scale-105 transition shadow-sm">
+                    <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+                </div>
+                <div class="text-left text-center sm:text-left">
+                    <p class="text-sm font-bold text-slate-800">이마트 CSV 데이터 파일을 이곳에 드래그하거나 클릭하여 업로드하세요</p>
+                    <p class="text-xs text-slate-500 mt-0.5">지원 규격: <span class="font-mono bg-amber-100/70 text-slate-700 px-1.5 py-0.5 rounded border border-amber-200">일자, 점포, 카테고리, 상품코드, 상품명, 판매수량, 정상단가, 할인액, 매출액, 행사적용</span></p>
+                </div>
+                <button id="dismissDropzone" class="hidden sm:block ml-auto text-slate-400 hover:text-slate-600 p-1 text-sm" title="숨기기">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Filter Controls Bar -->
+        <section id="filterBar" class="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-slate-200/80 no-print no-pdf">
+            <div class="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-4 bg-emart-yellow rounded-full"></div>
+                    <h2 class="text-sm font-bold text-slate-800">다차원 매출 검색 & 종합 필터</h2>
+                </div>
+                <span id="activeFilterBadge" class="text-xs px-2.5 py-1 bg-emart-yellowLight text-amber-900 border border-amber-200 rounded-full font-semibold">전체 데이터 분석 중</span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                <!-- Product Search Filter -->
+                <div class="col-span-1">
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5"><i class="fa-solid fa-magnifying-glass text-emart-accent mr-1"></i> 상품 검색 (명/코드)</label>
+                    <div class="relative">
+                        <input type="text" id="productSearchInput" placeholder="예: 피코크, 노브랜드, RM-101" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl pl-3 pr-8 py-2 focus:ring-2 focus:ring-emart-yellow focus:border-emart-yellow focus:bg-white focus:outline-none transition" />
+                        <button id="clearProductSearchBtn" class="hidden absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs" title="검색어 지우기">
+                            <i class="fa-solid fa-circle-xmark"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Date Range Filter -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5"><i class="fa-regular fa-calendar-check text-amber-600 mr-1"></i> 조회 기간</label>
+                    <div class="flex items-center gap-1.5">
+                        <input type="date" id="startDateInput" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-2 py-2 focus:ring-2 focus:ring-emart-yellow focus:bg-white focus:outline-none transition" />
+                        <span class="text-slate-400 text-xs font-bold">~</span>
+                        <input type="date" id="endDateInput" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-2 py-2 focus:ring-2 focus:ring-emart-yellow focus:bg-white focus:outline-none transition" />
+                    </div>
+                </div>
+
+                <!-- Store Filter -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5"><i class="fa-solid fa-store text-amber-600 mr-1"></i> 점포 선택</label>
+                    <select id="storeSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-emart-yellow focus:bg-white focus:outline-none transition cursor-pointer">
+                        <option value="ALL">전체 점포 보기</option>
+                    </select>
+                </div>
+
+                <!-- Category Filter -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5"><i class="fa-solid fa-layer-group text-amber-600 mr-1"></i> 카테고리 선택</label>
+                    <select id="categorySelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-emart-yellow focus:bg-white focus:outline-none transition cursor-pointer">
+                        <option value="ALL">전체 카테고리 보기</option>
+                    </select>
+                </div>
+
+                <!-- Promotion Filter -->
+                <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1.5"><i class="fa-solid fa-tags text-amber-600 mr-1"></i> 행사 적용 여부</label>
+                    <select id="promoSelect" class="w-full bg-slate-50 border border-slate-200 text-slate-800 text-xs rounded-xl px-3 py-2 focus:ring-2 focus:ring-emart-yellow focus:bg-white focus:outline-none transition cursor-pointer">
+                        <option value="ALL">전체 (행사 + 정상)</option>
+                        <option value="Y">행사 적용 상품 (Y)</option>
+                        <option value="N">정상가 판매 상품 (N)</option>
+                    </select>
+                </div>
+            </div>
+        </section>
+
+        <!-- KPI Metrics Grid -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 page-break-avoid">
+            <!-- Total Sales Card -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-emart-yellow"></div>
+                <div class="space-y-1 pl-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">총 매출액 (Revenue)</p>
+                    <p id="kpiTotalSales" class="text-2xl font-black text-slate-900 tracking-tight">₩0</p>
+                    <p id="kpiSalesSubText" class="text-[11px] text-amber-700 font-semibold flex items-center gap-1">
+                        <i class="fa-solid fa-arrow-trend-up"></i> 선택 데이터 총 실적
+                    </p>
+                </div>
+                <div class="p-3.5 bg-emart-yellowLight rounded-2xl text-amber-800 border border-amber-200 group-hover:bg-emart-yellow group-hover:text-slate-900 transition">
+                    <i class="fa-solid fa-won-sign text-xl"></i>
+                </div>
+            </div>
+
+            <!-- Total Quantity Card -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-slate-800"></div>
+                <div class="space-y-1 pl-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">총 판매수량 (Units Sold)</p>
+                    <p id="kpiTotalQty" class="text-2xl font-black text-slate-900 tracking-tight">0개</p>
+                    <p id="kpiQtySubText" class="text-[11px] text-slate-600 font-semibold">
+                        총 누적 판매 수량
+                    </p>
+                </div>
+                <div class="p-3.5 bg-slate-100 rounded-2xl text-slate-800 border border-slate-200 group-hover:bg-slate-800 group-hover:text-white transition">
+                    <i class="fa-solid fa-boxes-stacked text-xl"></i>
+                </div>
+            </div>
+
+            <!-- Total Discount Card -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-emart-accent"></div>
+                <div class="space-y-1 pl-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">총 할인액 (Discount)</p>
+                    <p id="kpiTotalDiscount" class="text-2xl font-black text-slate-900 tracking-tight">₩0</p>
+                    <p id="kpiDiscountRate" class="text-[11px] text-emart-accent font-bold">
+                        할인율: 0%
+                    </p>
+                </div>
+                <div class="p-3.5 bg-orange-50 rounded-2xl text-emart-accent border border-orange-200 group-hover:bg-emart-accent group-hover:text-white transition">
+                    <i class="fa-solid fa-percent text-xl"></i>
+                </div>
+            </div>
+
+            <!-- Average Price Card -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex items-center justify-between relative overflow-hidden group hover:shadow-md transition">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-emerald-500"></div>
+                <div class="space-y-1 pl-1">
+                    <p class="text-xs font-bold text-slate-500 uppercase tracking-wider">평균 판매 단가 (Avg Price)</p>
+                    <p id="kpiAvgPrice" class="text-2xl font-black text-slate-900 tracking-tight">₩0</p>
+                    <p id="kpiRowCount" class="text-[11px] text-slate-500 font-medium">
+                        분석 거래 건수: 0건
+                    </p>
+                </div>
+                <div class="p-3.5 bg-emerald-50 rounded-2xl text-emerald-600 border border-emerald-200 group-hover:bg-emerald-600 group-hover:text-white transition">
+                    <i class="fa-solid fa-calculator text-xl"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- Visual Charts Grid Section -->
+        <section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+            <!-- Chart 1: Date Trend (Line/Bar) -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col justify-between page-break-avoid">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-area text-emart-yellow bg-slate-900 p-1.5 rounded-lg text-xs"></i>
+                            일자별 매출 & 판매수량 추이
+                        </h3>
+                        <p class="text-xs text-slate-500">날짜별 매출액 변화 및 판매 수량 트렌드</p>
+                    </div>
+                </div>
+                <div class="relative w-full h-72">
+                    <canvas id="dailyTrendChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 2: Store Comparison (Bar) -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col justify-between page-break-avoid">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-shop text-emart-yellow bg-slate-900 p-1.5 rounded-lg text-xs"></i>
+                            지점별 매출 실적 비교
+                        </h3>
+                        <p class="text-xs text-slate-500">이마트 각 점포별 매출액 비교</p>
+                    </div>
+                </div>
+                <div class="relative w-full h-72">
+                    <canvas id="storeChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 3: Category Share (Doughnut) -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col justify-between page-break-avoid">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-chart-pie text-emart-yellow bg-slate-900 p-1.5 rounded-lg text-xs"></i>
+                            카테고리별 매출 점유율
+                        </h3>
+                        <p class="text-xs text-slate-500">주요 품목군별 매출 비중 분석</p>
+                    </div>
+                </div>
+                <div class="relative w-full h-72 flex items-center justify-center">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Chart 4: Top 10 Products (Horizontal Bar) -->
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/80 flex flex-col justify-between page-break-avoid">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-trophy text-emart-yellow bg-slate-900 p-1.5 rounded-lg text-xs"></i>
+                            인기 상품 Top 10 (매출 기준)
+                        </h3>
+                        <p class="text-xs text-slate-500">최고 매출을 기록한 대표 품목 순위</p>
+                    </div>
+                </div>
+                <div class="relative w-full h-72">
+                    <canvas id="topProductsChart"></canvas>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Data Table Section -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden page-break-avoid">
+            <div class="p-5 border-b border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-50/70">
+                <div>
+                    <h3 class="text-base font-bold text-slate-900 flex items-center gap-2">
+                        <i class="fa-solid fa-table-list text-amber-700"></i>
+                        상세 매출 내역
+                    </h3>
+                    <p class="text-xs text-slate-500">필터링된 상세 거래 데이터를 확인하고 엑셀/CSV 및 PDF로 다운로드할 수 있습니다.</p>
+                </div>
+
+                <div id="tableControls" class="flex items-center gap-2.5 w-full sm:w-auto flex-wrap no-print no-pdf">
+                    <!-- Table Inner Search Input -->
+                    <div class="relative w-full sm:w-60">
+                        <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
+                        <input type="text" id="tableSearchInput" placeholder="테이블 검색 (점포, 코드...)" class="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emart-yellow" />
+                    </div>
+
+                    <!-- Export CSV Button -->
+                    <button id="exportCsvBtn" class="bg-emart-dark hover:bg-slate-800 text-emart-yellow border border-amber-400/30 text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-sm flex items-center gap-1.5 whitespace-nowrap">
+                        <i class="fa-solid fa-file-excel text-amber-400"></i>
+                        <span>CSV 다운로드</span>
+                    </button>
+
+                    <!-- Export Table PDF Button -->
+                    <button id="exportTablePdfBtn" class="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition shadow-sm flex items-center gap-1.5 whitespace-nowrap" title="분석 결과 PDF 리포트 저장">
+                        <i class="fa-solid fa-file-pdf text-white"></i>
+                        <span>PDF 저장</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Table Container -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs text-slate-600 border-collapse">
+                    <thead class="bg-slate-900 text-white font-bold uppercase tracking-wider text-[11px]">
+                        <tr>
+                            <th class="py-3.5 px-4">일자</th>
+                            <th class="py-3.5 px-4">점포</th>
+                            <th class="py-3.5 px-4">카테고리</th>
+                            <th class="py-3.5 px-4">상품코드</th>
+                            <th class="py-3.5 px-4">상품명</th>
+                            <th class="py-3.5 px-4 text-right">판매수량</th>
+                            <th class="py-3.5 px-4 text-right">정상단가</th>
+                            <th class="py-3.5 px-4 text-right">할인액</th>
+                            <th class="py-3.5 px-4 text-right text-emart-yellow">매출액</th>
+                            <th class="py-3.5 px-4 text-center">행사여부</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody" class="divide-y divide-slate-100">
+                        <!-- Dynamic Rows loaded via JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Pagination / Footer -->
+            <div class="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center text-xs text-slate-500 gap-3 no-print no-pdf">
+                <div id="tableInfo" class="font-medium">표시 중: 0 / 0 항목</div>
+                <div class="flex items-center gap-1.5" id="paginationControls">
+                    <!-- Pagination Buttons populated dynamically -->
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-emart-dark border-t-2 border-emart-yellow mt-12 py-6 text-center text-xs text-slate-400">
+        <p class="font-bold text-slate-300">e-mart Sales Analytics System &bull; 이마트 매출 분석 대시보드</p>
+        <p class="text-[11px] text-slate-500 mt-1">반응형 CSV 데이터 분석 솔루션</p>
+    </footer>
+
+    <script>
+        // Global Application State
+        let rawData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        const rowsPerPage = 15;
+
+        // Chart Instances
+        let dailyTrendChartInstance = null;
+        let storeChartInstance = null;
+        let categoryChartInstance = null;
+        let topProductsChartInstance = null;
+
+        // Toast Notification Helper (replaces alert)
+        function showToast(message) {
+            const toast = document.getElementById('toastNotification');
+            const toastMsg = document.getElementById('toastMessage');
+            toastMsg.textContent = message;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+
+        // Generator for Sample CSV Data matching E-MART stores and realistic products
+        function generateSampleData() {
+            const stores = ['이마트 성수점', '이마트 은평점', '이마트 월계점', '이마트 용산점', '이마트 해운대점'];
+            
+            const products = [
+                { code: 'PK-101', name: '피코크 밀키트 차돌된장찌개', cat: '피코크/간편식', price: 9980 },
+                { code: 'PK-102', name: '피코크 초마짬뽕 2인분', cat: '피코크/간편식', price: 8480 },
+                { code: 'PK-103', name: '피코크 잭슨피자 페퍼로니', cat: '피코크/간편식', price: 7980 },
+                { code: 'NB-201', name: '노브랜드 버터쿠키 400g', cat: '노브랜드', price: 3480 },
+                { code: 'NB-202', name: '노브랜드 감자칩 사워크림', cat: '노브랜드', price: 1380 },
+                { code: 'NB-203', name: '노브랜드 100% 물티슈 100매', cat: '노브랜드', price: 980 },
+                { code: 'FD-301', name: '무항생제 1등급 한우 등심 300g', cat: '신선식품', price: 38900 },
+                { code: 'FD-302', name: '제주 당도선별 감귤 2kg', cat: '신선식품', price: 9900 },
+                { code: 'FD-303', name: '친환경 무항생제 대란 30구', cat: '신선식품', price: 7480 },
+                { code: 'FD-304', name: '프리미엄 샤인머스캣 1kg', cat: '신선식품', price: 15900 },
+                { code: 'BV-401', name: '이마트 e-프레시 우유 930ml', cat: '음료/유제품', price: 2180 },
+                { code: 'BV-402', name: '스타벅스 파이크플레이스 블랙 275ml', cat: '음료/유제품', price: 2400 },
+                { code: 'DL-501', name: '키친델리 스시-프리미엄 모둠초밥 16입', cat: '델리/Instant', price: 16980 },
+                { code: 'DL-502', name: '키친델리 훈제바베큐 통닭', cat: '델리/Instant', price: 9980 }
+            ];
+
+            const dates = [];
+            // Generate dates for August 2026
+            for (let i = 1; i <= 15; i++) {
+                const day = i < 10 ? '0' + i : i;
+                dates.push(`2026-08-${day}`);
+            }
+
+            const sampleList = [];
+
+            dates.forEach(date => {
+                stores.forEach(store => {
+                    // Pick random items per store per day
+                    const numItems = Math.floor(Math.random() * 5) + 5;
+                    const shuffled = [...products].sort(() => 0.5 - Math.random());
+                    
+                    for (let k = 0; k < numItems; k++) {
+                        const prod = shuffled[k];
+                        const qty = Math.floor(Math.random() * 50) + 15; // 15 to 65 units
+                        const isPromo = Math.random() < 0.3 ? 'Y' : 'N'; // 30% chance of promo
+                        const discountPerUnit = isPromo === 'Y' ? Math.floor(prod.price * 0.2) : 0;
+                        const totalDiscount = discountPerUnit * qty;
+                        const totalRevenue = (prod.price * qty) - totalDiscount;
+
+                        sampleList.push({
+                            일자: date,
+                            점포: store,
+                            카테고리: prod.cat,
+                            상품코드: prod.code,
+                            상품명: prod.name,
+                            판매수량: qty,
+                            정상단가: prod.price,
+                            할인액: totalDiscount,
+                            매출액: totalRevenue,
+                            행사적용: isPromo
+                        });
+                    }
+                });
+            });
+
+            return sampleList;
+        }
+
+        // Process Raw Data from CSV or Sample
+        function setRawData(data) {
+            rawData = data.filter(row => row['일자'] && row['점포'] && row['상품명']).map(row => {
+                const qty = parseInt(String(row['판매수량'] || '0').replace(/,/g, ''), 10) || 0;
+                const unitPrice = parseInt(String(row['정상단가'] || '0').replace(/,/g, ''), 10) || 0;
+                const discount = parseInt(String(row['할인액'] || '0').replace(/,/g, ''), 10) || 0;
+                let revenue = parseInt(String(row['매출액'] || '0').replace(/,/g, ''), 10);
+
+                if (isNaN(revenue) || revenue === 0) {
+                    revenue = (unitPrice * qty) - discount;
+                }
+
+                return {
+                    일자: String(row['일자']).trim(),
+                    점포: String(row['점포']).trim(),
+                    카테고리: String(row['카테고리'] || '기타').trim(),
+                    상품코드: String(row['상품코드'] || '-').trim(),
+                    상품명: String(row['상품명']).trim(),
+                    판매수량: qty,
+                    정상단가: unitPrice,
+                    할인액: discount,
+                    매출액: revenue,
+                    행사적용: String(row['행사적용'] || 'N').trim().toUpperCase() === 'Y' ? 'Y' : 'N'
+                };
+            });
+
+            populateFilterDropdowns();
+            applyFilters();
+        }
+
+        function populateFilterDropdowns() {
+            const storeSelect = document.getElementById('storeSelect');
+            const categorySelect = document.getElementById('categorySelect');
+            const startDateInput = document.getElementById('startDateInput');
+            const endDateInput = document.getElementById('endDateInput');
+
+            const stores = [...new Set(rawData.map(d => d.점포))].sort();
+            const categories = [...new Set(rawData.map(d => d.카테고리))].sort();
+            const dates = [...new Set(rawData.map(d => d.일자))].sort();
+
+            storeSelect.innerHTML = '<option value="ALL">전체 점포 보기</option>';
+            stores.forEach(s => {
+                storeSelect.innerHTML += `<option value="${s}">${s}</option>`;
+            });
+
+            categorySelect.innerHTML = '<option value="ALL">전체 카테고리 보기</option>';
+            categories.forEach(c => {
+                categorySelect.innerHTML += `<option value="${c}">${c}</option>`;
+            });
+
+            if (dates.length > 0) {
+                startDateInput.value = dates[0];
+                endDateInput.value = dates[dates.length - 1];
+            }
+        }
+
+        function applyFilters() {
+            const startDate = document.getElementById('startDateInput').value;
+            const endDate = document.getElementById('endDateInput').value;
+            const selectedStore = document.getElementById('storeSelect').value;
+            const selectedCategory = document.getElementById('categorySelect').value;
+            const selectedPromo = document.getElementById('promoSelect').value;
+            const productKeyword = document.getElementById('productSearchInput').value.toLowerCase().trim();
+
+            filteredData = rawData.filter(d => {
+                if (startDate && d.일자 < startDate) return false;
+                if (endDate && d.일자 > endDate) return false;
+                if (selectedStore !== 'ALL' && d.점포 !== selectedStore) return false;
+                if (selectedCategory !== 'ALL' && d.카테고리 !== selectedCategory) return false;
+                if (selectedPromo !== 'ALL' && d.행사적용 !== selectedPromo) return false;
+                if (productKeyword) {
+                    const matchName = d.상품명.toLowerCase().includes(productKeyword);
+                    const matchCode = d.상품코드.toLowerCase().includes(productKeyword);
+                    if (!matchName && !matchCode) return false;
+                }
+                return true;
+            });
+
+            const clearBtn = document.getElementById('clearProductSearchBtn');
+            if (clearBtn) {
+                if (productKeyword.length > 0) {
+                    clearBtn.classList.remove('hidden');
+                } else {
+                    clearBtn.classList.add('hidden');
+                }
+            }
+
+            const badge = document.getElementById('activeFilterBadge');
+            if (productKeyword) {
+                badge.textContent = `'${productKeyword}' 검색결과: 총 ${filteredData.length.toLocaleString()}건`;
+            } else {
+                badge.textContent = `총 ${filteredData.length.toLocaleString()}건 데이터 분석 중`;
+            }
+
+            currentPage = 1;
+            updateKPIs();
+            renderCharts();
+            renderTable();
+        }
+
+        function updateKPIs() {
+            const totalSales = filteredData.reduce((acc, cur) => acc + cur.매출액, 0);
+            const totalQty = filteredData.reduce((acc, cur) => acc + cur.판매수량, 0);
+            const totalDiscount = filteredData.reduce((acc, cur) => acc + cur.할인액, 0);
+            const rowCount = filteredData.length;
+            const avgPrice = totalQty > 0 ? Math.round(totalSales / totalQty) : 0;
+
+            const grossSales = totalSales + totalDiscount;
+            const discountRate = grossSales > 0 ? ((totalDiscount / grossSales) * 100).toFixed(1) : '0.0';
+
+            document.getElementById('kpiTotalSales').textContent = '₩' + totalSales.toLocaleString();
+            document.getElementById('kpiTotalQty').textContent = totalQty.toLocaleString() + '개';
+            document.getElementById('kpiTotalDiscount').textContent = '₩' + totalDiscount.toLocaleString();
+            document.getElementById('kpiDiscountRate').textContent = `할인율: ${discountRate}%`;
+            document.getElementById('kpiAvgPrice').textContent = '₩' + avgPrice.toLocaleString();
+            document.getElementById('kpiRowCount').textContent = `분석 거래 건수: ${rowCount.toLocaleString()}건`;
+        }
+
+        function renderCharts() {
+            renderDailyTrendChart();
+            renderStoreChart();
+            renderCategoryChart();
+            renderTopProductsChart();
+        }
+
+        // Chart 1: Daily Trend Chart
+        function renderDailyTrendChart() {
+            const ctx = document.getElementById('dailyTrendChart').getContext('2d');
+
+            const dailyMap = {};
+            filteredData.forEach(d => {
+                if (!dailyMap[d.일자]) {
+                    dailyMap[d.일자] = { sales: 0, qty: 0 };
+                }
+                dailyMap[d.일자].sales += d.매출액;
+                dailyMap[d.일자].qty += d.판매수량;
+            });
+
+            const labels = Object.keys(dailyMap).sort();
+            const salesData = labels.map(l => dailyMap[l].sales);
+            const qtyData = labels.map(l => dailyMap[l].qty);
+
+            if (dailyTrendChartInstance) dailyTrendChartInstance.destroy();
+
+            dailyTrendChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '매출액 (원)',
+                            data: salesData,
+                            backgroundColor: '#FFC800', // E-mart signature yellow
+                            borderColor: '#E6B400',
+                            borderWidth: 1,
+                            borderRadius: 6,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: '판매수량 (개)',
+                            data: qtyData,
+                            type: 'line',
+                            borderColor: '#1E242B', // E-mart Dark Charcoal
+                            backgroundColor: '#1E242B',
+                            borderWidth: 2.5,
+                            pointRadius: 3,
+                            tension: 0.2,
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } }
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            ticks: {
+                                font: { size: 10 },
+                                callback: value => '₩' + (value >= 10000 ? (value / 10000).toLocaleString() + '만' : value)
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            grid: { drawOnChartArea: false },
+                            ticks: { font: { size: 10 }, callback: value => value + '개' }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Chart 2: Store Comparison
+        function renderStoreChart() {
+            const ctx = document.getElementById('storeChart').getContext('2d');
+
+            const storeMap = {};
+            filteredData.forEach(d => {
+                if (!storeMap[d.점포]) storeMap[d.점포] = 0;
+                storeMap[d.점포] += d.매출액;
+            });
+
+            const labels = Object.keys(storeMap);
+            const salesData = labels.map(l => storeMap[l]);
+
+            if (storeChartInstance) storeChartInstance.destroy();
+
+            storeChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '점포별 매출액',
+                        data: salesData,
+                        backgroundColor: [
+                            '#FFC800',
+                            '#2D353F',
+                            '#FF8C00',
+                            '#E6B400',
+                            '#4A5568'
+                        ],
+                        borderRadius: 8
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: { grid: { display: false }, ticks: { font: { weight: 'bold' } } },
+                        y: {
+                            ticks: {
+                                callback: value => '₩' + (value >= 10000 ? (value / 10000).toLocaleString() + '만' : value)
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Chart 3: Category Share
+        function renderCategoryChart() {
+            const ctx = document.getElementById('categoryChart').getContext('2d');
+
+            const catMap = {};
+            filteredData.forEach(d => {
+                if (!catMap[d.카테고리]) catMap[d.카테고리] = 0;
+                catMap[d.카테고리] += d.매출액;
+            });
+
+            const labels = Object.keys(catMap);
+            const salesData = labels.map(l => catMap[l]);
+
+            if (categoryChartInstance) categoryChartInstance.destroy();
+
+            categoryChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: salesData,
+                        backgroundColor: [
+                            '#FFC800',
+                            '#1E242B',
+                            '#FF6B00',
+                            '#10B981',
+                            '#8B5CF6',
+                            '#64748B'
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11, weight: 'bold' } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.raw || 0;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return ` ${context.label}: ₩${value.toLocaleString()} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    },
+                    cutout: '65%'
+                }
+            });
+        }
+
+        // Chart 4: Top Products
+        function renderTopProductsChart() {
+            const ctx = document.getElementById('topProductsChart').getContext('2d');
+
+            const prodMap = {};
+            filteredData.forEach(d => {
+                if (!prodMap[d.상품명]) prodMap[d.상품명] = 0;
+                prodMap[d.상품명] += d.매출액;
+            });
+
+            const sortedProducts = Object.entries(prodMap)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10);
+
+            const labels = sortedProducts.map(p => p[0]);
+            const salesData = sortedProducts.map(p => p[1]);
+
+            if (topProductsChartInstance) topProductsChartInstance.destroy();
+
+            topProductsChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '매출액',
+                        data: salesData,
+                        backgroundColor: '#FFC800',
+                        borderColor: '#E6B400',
+                        borderWidth: 1,
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                callback: value => '₩' + (value >= 10000 ? (value / 10000).toLocaleString() + '만' : value)
+                            }
+                        },
+                        y: {
+                            ticks: { font: { size: 10, weight: 'bold' } },
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTable() {
+            const searchVal = document.getElementById('tableSearchInput').value.toLowerCase().trim();
+            const tableBody = document.getElementById('dataTableBody');
+
+            const searchedData = filteredData.filter(d => {
+                if (!searchVal) return true;
+                return (
+                    d.상품명.toLowerCase().includes(searchVal) ||
+                    d.상품코드.toLowerCase().includes(searchVal) ||
+                    d.점포.toLowerCase().includes(searchVal) ||
+                    d.카테고리.toLowerCase().includes(searchVal) ||
+                    d.일자.includes(searchVal)
+                );
+            });
+
+            const totalRows = searchedData.length;
+            const totalPages = Math.ceil(totalRows / rowsPerPage) || 1;
+            if (currentPage > totalPages) currentPage = totalPages;
+
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const pageData = searchedData.slice(startIndex, startIndex + rowsPerPage);
+
+            tableBody.innerHTML = '';
+            if (pageData.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="10" class="text-center py-8 text-slate-400 font-medium">조회된 데이터가 없습니다.</td></tr>`;
+            } else {
+                pageData.forEach(row => {
+                    const promoBadge = row.행사적용 === 'Y'
+                        ? `<span class="bg-emart-yellow text-slate-950 px-2 py-0.5 rounded font-black text-[10px]">행사Y</span>`
+                        : `<span class="bg-slate-100 text-slate-500 px-2 py-0.5 rounded font-medium text-[10px]">정상N</span>`;
+
+                    tableBody.innerHTML += `
+                        <tr class="hover:bg-amber-50/50 transition">
+                            <td class="py-2.5 px-4 font-mono text-slate-600">${row.일자}</td>
+                            <td class="py-2.5 px-4 font-bold text-slate-900">${row.점포}</td>
+                            <td class="py-2.5 px-4 text-slate-600">${row.카테고리}</td>
+                            <td class="py-2.5 px-4 font-mono text-slate-500 text-[11px]">${row.상품코드}</td>
+                            <td class="py-2.5 px-4 font-bold text-slate-900">${row.상품명}</td>
+                            <td class="py-2.5 px-4 text-right font-medium">${row.판매수량.toLocaleString()}</td>
+                            <td class="py-2.5 px-4 text-right text-slate-500">₩${row.정상단가.toLocaleString()}</td>
+                            <td class="py-2.5 px-4 text-right text-emart-accent font-semibold">₩${row.할인액.toLocaleString()}</td>
+                            <td class="py-2.5 px-4 text-right font-black text-slate-900 bg-amber-50/30">₩${row.매출액.toLocaleString()}</td>
+                            <td class="py-2.5 px-4 text-center">${promoBadge}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            document.getElementById('tableInfo').textContent = 
+                `표시 중: ${totalRows === 0 ? 0 : startIndex + 1} - ${Math.min(startIndex + rowsPerPage, totalRows)} / 총 ${totalRows.toLocaleString()}건`;
+
+            renderPagination(totalPages);
+        }
+
+        function renderPagination(totalPages) {
+            const container = document.getElementById('paginationControls');
+            container.innerHTML = '';
+
+            if (totalPages <= 1) return;
+
+            const prevBtn = document.createElement('button');
+            prevBtn.className = `px-2.5 py-1 rounded-lg border border-slate-200 text-xs ${currentPage === 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-100'}`;
+            prevBtn.innerHTML = `<i class="fa-solid fa-chevron-left"></i>`;
+            prevBtn.disabled = currentPage === 1;
+            prevBtn.onclick = () => { currentPage--; renderTable(); };
+            container.appendChild(prevBtn);
+
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+                    const pageBtn = document.createElement('button');
+                    pageBtn.className = `px-3 py-1 rounded-lg text-xs font-bold border ${i === currentPage ? 'bg-emart-dark text-emart-yellow border-slate-900' : 'border-slate-200 hover:bg-slate-100 text-slate-700'}`;
+                    pageBtn.textContent = i;
+                    pageBtn.onclick = () => { currentPage = i; renderTable(); };
+                    container.appendChild(pageBtn);
+                } else if (i === currentPage - 2 || i === currentPage + 2) {
+                    const dots = document.createElement('span');
+                    dots.className = 'px-1 text-slate-400 text-xs';
+                    dots.textContent = '...';
+                    container.appendChild(dots);
+                }
+            }
+
+            const nextBtn = document.createElement('button');
+            nextBtn.className = `px-2.5 py-1 rounded-lg border border-slate-200 text-xs ${currentPage === totalPages ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-100'}`;
+            nextBtn.innerHTML = `<i class="fa-solid fa-chevron-right"></i>`;
+            nextBtn.disabled = currentPage === totalPages;
+            nextBtn.onclick = () => { currentPage++; renderTable(); };
+            container.appendChild(nextBtn);
+        }
+
+        function handleFileSelect(file) {
+            if (!file) return;
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                encoding: "EUC-KR",
+                complete: function(results) {
+                    if (results.data && results.data.length > 0 && results.data[0]['일자']) {
+                        setRawData(results.data);
+                        showToast("CSV 데이터가 성공적으로 로드되었습니다.");
+                    } else {
+                        Papa.parse(file, {
+                            header: true,
+                            skipEmptyLines: true,
+                            encoding: "UTF-8",
+                            complete: function(utfResults) {
+                                if (utfResults.data && utfResults.data.length > 0) {
+                                    setRawData(utfResults.data);
+                                    showToast("CSV 데이터가 성공적으로 로드되었습니다.");
+                                } else {
+                                    showToast("CSV 올바른 컬럼 형식(일자, 점포, 상품명 등)을 확인해 주세요.");
+                                }
+                            }
+                        });
+                    }
+                },
+                error: function(err) {
+                    showToast("CSV 파일을 읽는 중 오류가 발생했습니다.");
+                }
+            });
+        }
+
+        function exportFilteredCsv() {
+            if (filteredData.length === 0) {
+                showToast('내보낼 데이터가 없습니다.');
+                return;
+            }
+
+            const csvString = Papa.unparse(filteredData);
+            const blob = new Blob(["\ufeff" + csvString], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `이마트_매출분석_리포트_${new Date().toISOString().slice(0, 10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast("CSV 리포트 다운로드가 완료되었습니다.");
+        }
+
+        // Export Analysis Dashboard as a High-Definition PDF Report
+        async function exportDashboardPdf() {
+            if (!filteredData || filteredData.length === 0) {
+                showToast('내보낼 분석 데이터가 없습니다.');
+                return;
+            }
+
+            // Check if html2pdf is available
+            if (typeof html2pdf === 'undefined') {
+                showToast('PDF 라이브러리를 로드 중입니다. 브라우저 인쇄 모드로 전환합니다.');
+                window.print();
+                return;
+            }
+
+            const exportBtn = document.getElementById('exportPdfBtn');
+            const exportTableBtn = document.getElementById('exportTablePdfBtn');
+            const origExportBtnHtml = exportBtn ? exportBtn.innerHTML : '';
+            const origTableBtnHtml = exportTableBtn ? exportTableBtn.innerHTML : '';
+
+            // Update button states
+            if (exportBtn) {
+                exportBtn.disabled = true;
+                exportBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-white"></i><span>PDF 생성 중...</span>`;
+            }
+            if (exportTableBtn) {
+                exportTableBtn.disabled = true;
+                exportTableBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin text-white"></i><span>생성 중...</span>`;
+            }
+
+            showToast('PDF 리포트를 생성하고 있습니다. 잠시만 기다려주세요...');
+
+            // Prepare PDF Header data
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const seconds = String(now.getSeconds()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+
+            const startDate = document.getElementById('startDateInput').value || '시작일';
+            const endDate = document.getElementById('endDateInput').value || '종료일';
+            const storeSelect = document.getElementById('storeSelect');
+            const storeText = storeSelect.options[storeSelect.selectedIndex]?.text || '전체 점포';
+            const catSelect = document.getElementById('categorySelect');
+            const catText = catSelect.options[catSelect.selectedIndex]?.text || '전체 카테고리';
+            const promoSelect = document.getElementById('promoSelect');
+            const promoText = promoSelect.options[promoSelect.selectedIndex]?.text || '전체';
+            const keyword = document.getElementById('productSearchInput').value.trim();
+
+            const pdfTimestamp = document.getElementById('pdfReportTimestamp');
+            const pdfDate = document.getElementById('pdfFilterDate');
+            const pdfStore = document.getElementById('pdfFilterStore');
+            const pdfCategory = document.getElementById('pdfFilterCategory');
+            const pdfEtc = document.getElementById('pdfFilterEtc');
+
+            if (pdfTimestamp) pdfTimestamp.textContent = dateStr;
+            if (pdfDate) pdfDate.textContent = `${startDate} ~ ${endDate}`;
+            if (pdfStore) pdfStore.textContent = storeText;
+            if (pdfCategory) pdfCategory.textContent = catText;
+            if (pdfEtc) pdfEtc.textContent = `행사: ${promoText}${keyword ? ' / 검색: ' + keyword : ''}`;
+
+            const mainContent = document.getElementById('mainContent');
+            const dropZone = document.getElementById('dropZone');
+            const filterBar = document.getElementById('filterBar');
+            const pdfHeader = document.getElementById('pdfReportHeader');
+
+            const wasDropZoneHidden = dropZone ? (dropZone.style.display === 'none' || dropZone.classList.contains('hidden')) : false;
+
+            // Apply PDF export styling
+            if (pdfHeader) pdfHeader.classList.remove('hidden');
+            if (dropZone) dropZone.classList.add('hidden');
+            if (filterBar) filterBar.classList.add('hidden');
+            if (mainContent) mainContent.classList.add('pdf-exporting');
+
+            // Wait 250ms for layout adjustment
+            await new Promise(r => setTimeout(r, 250));
+
+            const fileName = `이마트_매출분석_리포트_${year}${month}${day}_${hours}${minutes}.pdf`;
+
+            const opt = {
+                margin: [10, 8, 10, 8],
+                filename: fileName,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: {
+                    scale: 2,
+                    useCORS: true,
+                    logging: false,
+                    scrollY: 0,
+                    windowWidth: 1200
+                },
+                jsPDF: {
+                    unit: 'mm',
+                    format: 'a4',
+                    orientation: 'portrait'
+                },
+                pagebreak: {
+                    mode: ['avoid-all', 'css', 'legacy']
+                }
+            };
+
+            try {
+                await html2pdf().set(opt).from(mainContent).save();
+                showToast('PDF 리포트가 성공적으로 다운로드되었습니다.');
+            } catch (err) {
+                console.error('PDF export error:', err);
+                showToast('PDF 자동 생성 중 오류가 발생하여 브라우저 인쇄 모드로 전환합니다.');
+                window.print();
+            } finally {
+                // Restore original UI
+                if (pdfHeader) pdfHeader.classList.add('hidden');
+                if (dropZone && !wasDropZoneHidden) dropZone.classList.remove('hidden');
+                if (filterBar) filterBar.classList.remove('hidden');
+                if (mainContent) mainContent.classList.remove('pdf-exporting');
+
+                if (exportBtn) {
+                    exportBtn.disabled = false;
+                    exportBtn.innerHTML = origExportBtnHtml;
+                }
+                if (exportTableBtn) {
+                    exportTableBtn.disabled = false;
+                    exportTableBtn.innerHTML = origTableBtnHtml;
+                }
+            }
+        }
+
+        window.onload = function() {
+            setRawData(generateSampleData());
+
+            const csvInput = document.getElementById('csvFileInput');
+            csvInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
+
+            document.getElementById('loadSampleBtn').addEventListener('click', () => {
+                setRawData(generateSampleData());
+                showToast("이마트 샘플 데이터가 로드되었습니다.");
+            });
+
+            const productInput = document.getElementById('productSearchInput');
+            productInput.addEventListener('input', applyFilters);
+
+            document.getElementById('clearProductSearchBtn').addEventListener('click', () => {
+                productInput.value = '';
+                applyFilters();
+            });
+
+            document.getElementById('startDateInput').addEventListener('change', applyFilters);
+            document.getElementById('endDateInput').addEventListener('change', applyFilters);
+            document.getElementById('storeSelect').addEventListener('change', applyFilters);
+            document.getElementById('categorySelect').addEventListener('change', applyFilters);
+            document.getElementById('promoSelect').addEventListener('change', applyFilters);
+
+            document.getElementById('tableSearchInput').addEventListener('input', () => {
+                currentPage = 1;
+                renderTable();
+            });
+
+            document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+                document.getElementById('productSearchInput').value = '';
+                document.getElementById('storeSelect').value = 'ALL';
+                document.getElementById('categorySelect').value = 'ALL';
+                document.getElementById('promoSelect').value = 'ALL';
+                const dates = [...new Set(rawData.map(d => d.일자))].sort();
+                if (dates.length > 0) {
+                    document.getElementById('startDateInput').value = dates[0];
+                    document.getElementById('endDateInput').value = dates[dates.length - 1];
+                }
+                applyFilters();
+                showToast("모든 필터가 초기화되었습니다.");
+            });
+
+            document.getElementById('exportCsvBtn').addEventListener('click', exportFilteredCsv);
+
+            const exportPdfBtn = document.getElementById('exportPdfBtn');
+            if (exportPdfBtn) exportPdfBtn.addEventListener('click', exportDashboardPdf);
+
+            const exportTablePdfBtn = document.getElementById('exportTablePdfBtn');
+            if (exportTablePdfBtn) exportTablePdfBtn.addEventListener('click', exportDashboardPdf);
+
+            const dropZone = document.getElementById('dropZone');
+            dropZone.addEventListener('click', () => csvInput.click());
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.add('border-emart-yellow', 'bg-amber-100/50');
+                }, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, (e) => {
+                    e.preventDefault();
+                    dropZone.classList.remove('border-emart-yellow', 'bg-amber-100/50');
+                }, false);
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+                if (files.length > 0) {
+                    handleFileSelect(files[0]);
+                }
+            });
+
+            document.getElementById('dismissDropzone').addEventListener('click', (e) => {
+                e.stopPropagation();
+                dropZone.style.display = 'none';
+            });
+        };
+    </script>
+</body>
+</html>
